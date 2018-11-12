@@ -18,36 +18,59 @@ public class Calculator {
     private static final String SUBTRACT = "-";
     private static final String MULTIPLY = "*";
     private static final String DIVIDE = "/";
+    private static final Pattern PATTERN = Pattern.compile("([0-9]+\\.?[0-9]*|\\(|\\)|\\+|\\*|-|/)");
+    private static final Pattern OPERATOR_PATTERN = Pattern.compile("^(\\+|\\*|-|/)$");
+    private static final Pattern BRACKET_PATTERN = Pattern.compile("^(\\(|\\))$");
+    private static final Pattern NUMBER_PATTERN = Pattern.compile("^[0-9]+\\.?[0-9]*$");
 
+    /**
+     * 执行运算
+     * @param enterLine 用户输入的算式
+     * @return 运算结果
+     */
     public static String invoke(String enterLine) {
         CheckUtil.check(enterLine);
         List<String> enterList = splitEnterLine(enterLine);
         String result = compute(enterList);
+        BigDecimal resultDecimal = BigDecimal.valueOf(Double.parseDouble(result));
+        if (new BigDecimal(resultDecimal.intValue()).compareTo(resultDecimal) == 0) {
+            return Integer.toString(resultDecimal.intValue());
+        }
+
         return result;
     }
 
     /**
-     * 将用户输入的字符串分割成字符串List
-     * @param enterLine 用户输入的字符串
+     * 将用户输入的算式分割成字符串List
+     * @param enterLine 用户输入的算式
      * @return 字符串List
      */
     private static List<String> splitEnterLine(String enterLine) {
-        Pattern pattern = Pattern.compile("([0-9]+|\\(|\\)|\\+|\\*|-|/)");
-        Matcher matcher = pattern.matcher(enterLine);
+        Matcher matcher = PATTERN.matcher(enterLine);
         List<String> result = new ArrayList<String>();
         while (matcher.find()) {
             result.add(matcher.group());
         }
+//        System.out.println(result.toString());
         return result;
     }
 
+    /**
+     * 递归运算
+     * @param itemList
+     * @return
+     */
     private static String compute(List<String> itemList) {
+        // 是否准备进入递归运算
         boolean isOperateBySub = false;
+        // 用于存储当前算式的项目
         Stack<String> stack = new Stack<String>();
+        // 用于保存括号
+        Stack<String> bracketStack = new Stack<>();
+        // 用于保存进入递归运算的项目
         List<String> subItemList = new ArrayList<String>();
-        Pattern operatorPattern = Pattern.compile("^(\\+|\\*|-|/)$");
-        Pattern bracketPattern = Pattern.compile("^(\\(|\\))$");
-        Pattern numberPattern = Pattern.compile("^[0-9]+$");
+
+        // 初始化stack
         stack.push("0");
         stack.push("+");
 
@@ -55,29 +78,24 @@ public class Calculator {
             String item = itemList.get(i);
             String prevItem = stack.peek();
             // 上一个元素和当前元素不能同时是运算符
-            if (!isOperateBySub && operatorPattern.matcher(prevItem).find() && operatorPattern.matcher(item).find()) {
+            if (!isOperateBySub && OPERATOR_PATTERN.matcher(prevItem).find() && OPERATOR_PATTERN.matcher(item).find()) {
                 throw new RuntimeException("运算符不合法");
             }
 
-            // 如果当前元素是运算符，那么上一个元素应该不是括号
-            if (operatorPattern.matcher(item).find() && bracketPattern.matcher(prevItem).find()) {
-                throw new RuntimeException("运算符与括号的搭配不合法");
-            }
-
             // 如果当前元素是数字，那么上一个元素应该不是右括号
-            if (numberPattern.matcher(item).find() && RIGHT_BRACKET.equals(prevItem)) {
+            if (NUMBER_PATTERN.matcher(item).find() && RIGHT_BRACKET.equals(prevItem)) {
                 throw new RuntimeException("数字与括号的搭配不合法");
             }
 
             // 如果当前元素是数字，而且取出stack的上一个元素（运算符）以及上上一个元素（数字），算出结果
-            if (numberPattern.matcher(item).find()) {
+            if (NUMBER_PATTERN.matcher(item).find()) {
                 if (isOperateBySub) {
                     subItemList.add(item);
                 } else {
                     handlerCurrentNum(prevItem, item, stack, i, itemList);
                 }
 
-            } else if (operatorPattern.matcher(item).find()) {
+            } else if (OPERATOR_PATTERN.matcher(item).find()) {
                 // 如果当前元素是运算符，那么直接加入stack
                 if (isOperateBySub) {
                     subItemList.add(item);
@@ -86,18 +104,35 @@ public class Calculator {
                 }
 
             } else {
+
                 if (LEFT_BRACKET.equals(item)) {
-                    isOperateBySub = true;
+                    if (bracketStack.empty()) {
+                        isOperateBySub = true;
+                    } else {
+                        subItemList.add(item);
+                    }
+                    bracketStack.push(item);
+
                 } else {
-                    String subResult = compute(subItemList);
-                    handlerCurrentNum(prevItem, subResult, stack, i, itemList);
-                    subItemList.clear();
-                    isOperateBySub = false;
+                    if (bracketStack.empty()) {
+                        throw new RuntimeException("括号不正确");
+                    }
+
+                    bracketStack.pop();
+                    if (bracketStack.empty()) {
+//                        System.out.println(subItemList.toString());
+                        String subResult = compute(subItemList);
+                        handlerCurrentNum(prevItem, subResult, stack, i, itemList);
+                        subItemList.clear();
+                        isOperateBySub = false;
+                    } else {
+                        subItemList.add(item);
+                    }
                 }
             }
         }
 
-        System.out.println(stack);
+//        System.out.println(stack);
         String result = lastOperate(stack);
 
         return result;
@@ -121,7 +156,7 @@ public class Calculator {
         if (MULTIPLY.equals(prevItem) || DIVIDE.equals(prevItem)) {
             String operator = stack.pop();
             String prevNum = stack.pop();
-            String operateResult = operate(item, prevNum, operator);
+            String operateResult = operate(prevNum, item, operator);
             stack.push(operateResult);
         } else {
             String nextOperator = getNextOperator(i, itemList);
@@ -130,7 +165,7 @@ public class Calculator {
             } else {
                 String operator = stack.pop();
                 String prevNum = stack.pop();
-                String operateResult = operate(item, prevNum, operator);
+                String operateResult = operate(prevNum, item, operator);
                 stack.push(operateResult);
             }
         }
@@ -145,6 +180,7 @@ public class Calculator {
      * @return 结果
      */
     private static String operate(String num1, String num2, String operator) {
+
         BigDecimal decimal1 = BigDecimal.valueOf(Double.valueOf(num1));
         BigDecimal decimal2 = BigDecimal.valueOf(Double.valueOf(num2));
         BigDecimal result = BigDecimal.ZERO;
@@ -162,7 +198,6 @@ public class Calculator {
             // 除法
             result = decimal1.divide(decimal2);
         }
-
         return result.toString();
     }
 
@@ -172,17 +207,21 @@ public class Calculator {
      * @param itemList ItemList
      * @return 下一个运算符（如果没有则返回null）
      */
-    private static String getNextOperator(int currentIndex, List<String> itemList) {
-        Pattern operatorPattern = Pattern.compile("^(\\+|\\*|-|/)$");
+    private static String getNextOperator(int currentIndex, List<String> itemList) {;
         for (int i = currentIndex; i < itemList.size(); i++) {
             String item = itemList.get(i);
-            if (operatorPattern.matcher(item).find()) {
+            if (OPERATOR_PATTERN.matcher(item).find()) {
                 return item;
             }
         }
         return null;
     }
 
+    /**
+     * 剩余的算式进行运算
+     * @param stack
+     * @return
+     */
     private static String lastOperate(Stack<String> stack) {
         String num1 = stack.pop();
         if (stack.empty()) {
@@ -191,7 +230,7 @@ public class Calculator {
         String operator = stack.pop();
         String num2 = stack.pop();
 
-        String result = operate(num1, num2, operator);
+        String result = operate(num2, num1, operator);
         stack.push(result);
         return lastOperate(stack);
     }
